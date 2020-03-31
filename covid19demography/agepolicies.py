@@ -325,6 +325,9 @@ def assemble_parameters(frac_stay_home, mtti, country='Italy', seed=0):
         t_lockdown=float((tuned.lockdown_date - tuned.start_date).days),
         lockdown_factor=LOCKDOWN_FACTOR,
         t_stayhome_start=float((tuned.stay_home_date - tuned.start_date).days),
+        p_documented_in_mild=0.,
+        p_infect_given_contact=tuned.pigc,
+        asymptomatic_transmissibility=ASYMPTOMATIC_TRANSMISSIBILITY,
         **times,
         **contact_tracing(tuned.start_date)
     )
@@ -358,9 +361,11 @@ def simulate(params):
     )
 
 def run():
-    """
-    age_ranges:  [(0,14), (15,29), (30,49), (50,69), (70,100)]
-    """
-    frac_stay_home = [.5, .5, .5, .5, .5]
+    age_ranges = [(0,14), (15,29), (30,49), (50,69), (70,100)]
+    frac = [.5, .5, .5, .5, .5]
+    frac_stay_home = np.zeros(N_AGES)
+    for (l, u), frac in zip(age_ranges, frac_stay_home):
+        frac_stay_home[l:u+1] = frac 
+
     params = assemble_parameters(frac_stay_home, 4.6)
     result = simulate(params)
