@@ -1,7 +1,7 @@
 import csv
 import numpy as np
 import aljpy
-from . import simulator, common
+from . import simulator, common, arrdict
 import scipy as sp
 import scipy.special
 from pkg_resources import resource_filename
@@ -352,20 +352,25 @@ def simulate(params):
         time_to_activation, time_to_death, time_to_recovery, time_critical, time_exposed, num_infected_asympt,\
         age, time_infected, time_to_severe = simulator.run_complete_simulation(**params)
     
-    per_time = aljpy.dotdict(S=S, E=E, D=D, mild=Mild, severe=Severe, critical=Critical, R=R, Q=Q, documented=Documented).sum(1)
+    per_time = arrdict.arrdict(S=S, E=E, D=D, mild=Mild, severe=Severe, critical=Critical, R=R, Q=Q, documented=Documented).sum(1)
     per_time['infected'] = params.params.n - per_time.S
 
-    return aljpy.dotdict(
-        r0_total=num_infected_by[np.logical_and(time_exposed <= 20, time_exposed > 0)].mean(),
+    return arrdict.arrdict(
+        r0_total=num_infected_by[(0 < time_exposed) & (time_exposed <= 20)].mean(),
         per_time=per_time,
     )
 
-def run():
+def run(frac, repeats=5):
     age_ranges = [(0,14), (15,29), (30,49), (50,69), (70,100)]
-    frac = [.5, .5, .5, .5, .5]
     frac_stay_home = np.zeros(N_AGES)
-    for (l, u), frac in zip(age_ranges, frac_stay_home):
+    for (l, u), frac in zip(age_ranges, frac):
         frac_stay_home[l:u+1] = frac 
 
-    params = assemble_parameters(frac_stay_home, 4.6)
-    result = simulate(params)
+    results = []
+    for i in range(repeats):
+        params = assemble_parameters(frac_stay_home, 4.6, seed=i)
+        result = simulate(params)
+        results.append(result.per_time)
+    results = arrdict.stack(results, -1)
+
+    return results
