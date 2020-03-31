@@ -1,5 +1,6 @@
 import numpy as np
 import csv
+from pkg_resources import resource_filename
 
 '''
 Code for sampling the household and age structure of a population of n
@@ -9,7 +10,7 @@ agents.
 
 def get_age_distribution(country):
     age_distribution=[]
-    with open('World_Age_2019.csv') as csv_file:
+    with open(resource_filename(__package__, 'ages/World_Age_2019.csv')) as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         for row in csv_reader:
             if row[0]==country:
@@ -21,7 +22,7 @@ def get_age_distribution(country):
 
 def get_mother_birth_age_distribution(country):
     mother_birth_age_distribution=[]
-    with open('AgeSpecificFertility.csv',encoding='latin-1') as csv_file:
+    with open(resource_filename(__package__, 'ages/AgeSpecificFertility.csv'), encoding='latin-1') as csv_file:
         csv_reader = csv.reader(csv_file, delimiter=',')
         for row in csv_reader:
             if row[0]==country:
