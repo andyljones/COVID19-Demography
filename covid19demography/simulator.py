@@ -201,72 +201,73 @@ def progress(t, i, prev, curr, ts, tts, inds, deps, p):
                 curr.Q[i] = False
                 curr.D[i] = True
 
-def spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p):
-    #not isolated: either enter isolation or infect others
-    if (prev.E[i] or prev.Mild[i] or prev.Severe[i] or prev.Critical[i]) and (not prev.Q[i]) and (not curr.R[i]):
-        #isolation
-        if not prev.E[i] and t - ts.time_infected[i] == tts.time_to_isolate[i]:
-            curr.Q[i] = True
-            return
+def spread(t, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p):
+    for i in range(int(p.n)):
+        #not isolated: either enter isolation or infect others
+        if (prev.E[i] or prev.Mild[i] or prev.Severe[i] or prev.Critical[i]) and (not prev.Q[i]) and (not curr.R[i]):
+            #isolation
+            if not prev.E[i] and t - ts.time_infected[i] == tts.time_to_isolate[i]:
+                curr.Q[i] = True
+                continue
 
-        if prev.E[i] and t - ts.time_exposed[i] == tts.time_to_isolate[i]:
-            curr.Q[i] = True
-            return
+            if prev.E[i] and t - ts.time_exposed[i] == tts.time_to_isolate[i]:
+                curr.Q[i] = True
+                continue
 
-        #infect within family
-        for j in range(households.shape[1]):
-            if households[i,j] == -1:
-                break
-            contact = households[i,j]
-            infectiousness = inds.p_infect_household[i]
-            if prev.E[i]:
-                infectiousness *= p.asymptomatic_transmissibility
-            if prev.S[contact] and rand() < infectiousness:
-                curr.E[contact] = True
-                ns.num_infected_by[contact] = 0
-                ns.num_infected_by_outside[contact] = 0
-                ns.num_infected_asympt[contact] = 0
-                curr.S[contact] = False
-                tts.time_to_isolate[contact] = common.threshold_exponential(p.mean_time_to_isolate_asympt*get_isolation_factor(inds.age[contact], deps.mean_time_to_isolate_factor))
-                if tts.time_to_isolate[contact] == 0:
-                    curr.Q[contact] = True
-                ts.time_exposed[contact] = t
-                tts.time_to_activation[contact] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
-                ns.num_infected_by[i] += 1
+            #infect within family
+            for j in range(households.shape[1]):
+                if households[i,j] == -1:
+                    break
+                contact = households[i,j]
+                infectiousness = inds.p_infect_household[i]
                 if prev.E[i]:
-                    ns.num_infected_asympt[i] += 1
+                    infectiousness *= p.asymptomatic_transmissibility
+                if prev.S[contact] and rand() < infectiousness:
+                    curr.E[contact] = True
+                    ns.num_infected_by[contact] = 0
+                    ns.num_infected_by_outside[contact] = 0
+                    ns.num_infected_asympt[contact] = 0
+                    curr.S[contact] = False
+                    tts.time_to_isolate[contact] = common.threshold_exponential(p.mean_time_to_isolate_asympt*get_isolation_factor(inds.age[contact], deps.mean_time_to_isolate_factor))
+                    if tts.time_to_isolate[contact] == 0:
+                        curr.Q[contact] = True
+                    ts.time_exposed[contact] = t
+                    tts.time_to_activation[contact] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
+                    ns.num_infected_by[i] += 1
+                    if prev.E[i]:
+                        ns.num_infected_asympt[i] += 1
 
-        #infect across families
-        if not Home[i]:
-            infectiousness = p.p_infect_given_contact
-            #lower infectiousness for asymptomatic individuals
-            if prev.E[i]:
-                infectiousness *= p.asymptomatic_transmissibility
-            #draw a Poisson-distributed number of contacts for each age group
-            for contact_age in range(int(p.n_ages)):
-                if deps.age_groups[contact_age].shape[0] == 0:
-                    continue
-                num_contacts = poisson(deps.contact_matrix[inds.age[i], contact_age])
-                for j in range(num_contacts):
-                    #if the contact becomes infected, handle bookkeeping
-                    if rand() < infectiousness:
-                        contact = choice(deps.age_groups[contact_age])
-                        if prev.S[contact] and not Home[contact]:
-                            curr.E[contact] = True
-                            ns.num_infected_by[contact] = 0
-                            ns.num_infected_by_outside[contact] = 0
-                            ns.num_infected_asympt[contact] = 0
-                            curr.S[contact] = False
-                            tts.time_to_isolate[contact] = common.threshold_exponential(p.mean_time_to_isolate_asympt*get_isolation_factor(inds.age[contact], deps.mean_time_to_isolate_factor))
-                            if tts.time_to_isolate[contact] == 0:
-                                curr.Q[contact] = True
-                            ts.time_exposed[contact] = t
-                            tts.time_to_activation[contact] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
-                            ns.num_infected_by[i] += 1
-                            infected_by[i, ns.num_infected_by_outside[i]] = contact
-                            ns.num_infected_by_outside[i] += 1
-                            if prev.E[i]:
-                                ns.num_infected_asympt[i] += 1
+            #infect across families
+            if not Home[i]:
+                infectiousness = p.p_infect_given_contact
+                #lower infectiousness for asymptomatic individuals
+                if prev.E[i]:
+                    infectiousness *= p.asymptomatic_transmissibility
+                #draw a Poisson-distributed number of contacts for each age group
+                for contact_age in range(int(p.n_ages)):
+                    if deps.age_groups[contact_age].shape[0] == 0:
+                        continue
+                    num_contacts = poisson(deps.contact_matrix[inds.age[i], contact_age])
+                    for j in range(num_contacts):
+                        #if the contact becomes infected, handle bookkeeping
+                        if rand() < infectiousness:
+                            contact = choice(deps.age_groups[contact_age])
+                            if prev.S[contact] and not Home[contact]:
+                                curr.E[contact] = True
+                                ns.num_infected_by[contact] = 0
+                                ns.num_infected_by_outside[contact] = 0
+                                ns.num_infected_asympt[contact] = 0
+                                curr.S[contact] = False
+                                tts.time_to_isolate[contact] = common.threshold_exponential(p.mean_time_to_isolate_asympt*get_isolation_factor(inds.age[contact], deps.mean_time_to_isolate_factor))
+                                if tts.time_to_isolate[contact] == 0:
+                                    curr.Q[contact] = True
+                                ts.time_exposed[contact] = t
+                                tts.time_to_activation[contact] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
+                                ns.num_infected_by[i] += 1
+                                infected_by[i, ns.num_infected_by_outside[i]] = contact
+                                ns.num_infected_by_outside[i] += 1
+                                if prev.E[i]:
+                                    ns.num_infected_asympt[i] += 1
 
 # @jit(nopython=True)
 def run_model(seed, households, age, age_groups, diabetes, hypertension, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, params):
@@ -365,8 +366,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
             activate(t, i, prev, curr, ts, tts, inds, deps, p)
             progress(t, i, prev, curr, ts, tts, inds, deps, p)
 
-        for i in range(n):
-            spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p)
+        spread(t, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p)
 
     return s.S, s.E, s.Mild, s.Documented, s.Severe, s.Critical, s.R, s.D, s.Q, ns.num_infected_by, ts.time_documented, tts.time_to_activation, tts.time_to_death, tts.time_to_recovery, ts.time_critical, ts.time_exposed, ns.num_infected_asympt, age, ts.time_infected, tts.time_to_severe
 
@@ -382,7 +382,7 @@ def validate():
     import pickle
 
     ref_kwargs = aljpy.dotdict(pickle.loads(Path('output/ref-kwargs.pickle').read_bytes()))
-    ref_result = aljpy.dotdict(pickle.loads(Path('output/ref-results.pickle').read_bytes()))
+    ref_result = aljpy.dotdict(pickle.loads(Path('output/decoupled-results.pickle').read_bytes()))
     params = aljpy.dotdict(ref_kwargs.params)
 
     np.random.seed(int(ref_kwargs.seed))
