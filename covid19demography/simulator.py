@@ -39,6 +39,24 @@ def get_lockdown_factor_age(age, lockdown_factor_age):
     return 1
 
 @jit(nopython=True)
+def choice(n, k=None, replace=None):
+    # np.random.choice's seed will be fixed in the next version of numba: https://github.com/numba/numba/issues/3249
+    # Until then, it diverges from numpy's `choice`.
+    return np.random.choice(n, k, replace=replace)
+
+@jit(nopython=True)
+def rand():
+    return np.random.rand()
+
+@jit(nopython=True)
+def poisson(mu):
+    return np.random.poisson(mu)
+
+@jit(nopython=True)
+def numba_seed(seed):
+    return np.random.seed(seed)
+
+# @jit(nopython=True)
 def run_model(seed, households, age, age_groups, diabetes, hypertension, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, params):
     print('run_model')
     """Run the SEIR model to completion.
@@ -105,11 +123,8 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
     contact_tracing = bool(params['contact_tracing'])
     t_tracing_start = int(params['t_tracing_start'])
     t_stayinghome_start = int(params['t_stayhome_start'])
-    if contact_tracing:
-        tracing_enabled = True
-        contact_tracing = False
     
-    np.random.seed(seed)
+    numba_seed(int(seed))
     max_household_size = households.shape[1]
     S = np.zeros((T, n), dtype=np.bool8)
     E = np.zeros((T, n), dtype=np.bool8)
@@ -127,13 +142,13 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
     for i in range(n_ages):
         matches = np.where(age == i)[0]
         if matches.shape[0] > 0:
-            to_stay_home = np.random.choice(matches, int(fraction_stay_home[i]*matches.shape[0]), replace=False)
+            to_stay_home = choice(matches, int(fraction_stay_home[i]*matches.shape[0]), replace=False)
             Home_real[to_stay_home] = True
     #no one shelters in place until t_stayhome_start
     dummy_Home = np.zeros(n, dtype=np.bool8)
     dummy_Home[:] = False
     Home = dummy_Home
-    initial_infected = np.random.choice(n, int(initial_infected_fraction*n), replace=False)
+    initial_infected = choice(n, int(initial_infected_fraction*n), replace=False)
     S[0] = True
     E[0] = False
     R[0] = False
@@ -187,8 +202,6 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
             #     for j in range(contact_matrix.shape[1]):
             #         contact_matrix[i,j] = contact_matrix[i,j]/(get_lockdown_factor_age(i,lockdown_factor_age)*get_lockdown_factor_age(j,lockdown_factor_age))
             contact_matrix = contact_matrix/lockdown_factor
-        if t == t_tracing_start and tracing_enabled:
-            contact_tracing = True
         if t == t_stayinghome_start:
             Home = Home_real
         S[t] = S[t-1]
@@ -208,7 +221,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                     time_infected[i] = t
                     E[t, i] = False
                     #draw whether they will progress to severe illness
-                    if np.random.rand() < p_mild_severe[age[i], diabetes[i], hypertension[i]]:
+                    if rand() < p_mild_severe[age[i], diabetes[i], hypertension[i]]:
                         time_to_severe[i] = common.threshold_exponential(mean_time_to_severe)
                         time_to_recovery[i] = np.inf
                     #draw time to recovery
@@ -228,7 +241,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                     continue
                 if Mild[t-1, i] and not Documented[t-1, i]:
                     #mild cases are documented with some probability each day
-                    if np.random.rand() < p_documented_in_mild:
+                    if rand() < p_documented_in_mild:
                         Documented[t, i] = True
                         time_documented[i] = t
                         traced[i] = True
@@ -243,7 +256,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                         traced[i] = True
                     Q[t, i] = True
                     time_severe[i] = t
-                    if np.random.rand() < p_severe_critical[age[i], diabetes[i], hypertension[i]]:
+                    if rand() < p_severe_critical[age[i], diabetes[i], hypertension[i]]:
                         time_to_critical[i] = common.threshold_exponential(mean_time_to_critical)
                         time_to_recovery[i] = np.inf
                     else:
@@ -253,7 +266,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                     Severe[t, i] = False
                     Critical[t, i] = True
                     time_critical[i] = t
-                    if np.random.rand() < p_critical_death[age[i], diabetes[i], hypertension[i]]:
+                    if rand() < p_critical_death[age[i], diabetes[i], hypertension[i]]:
                         time_to_death[i] = common.threshold_exponential(mean_time_to_death)
                         time_to_recovery[i] = np.inf
                     else:
@@ -283,7 +296,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                         infectiousness = p_infect_household[i]
                         if E[t-1, i]:
                             infectiousness *= asymptomatic_transmissibility
-                        if S[t-1, contact] and np.random.rand() < infectiousness:
+                        if S[t-1, contact] and rand() < infectiousness:
                             E[t, contact] = True
                             num_infected_by[contact] = 0
                             num_infected_by_outside[contact] = 0
@@ -307,11 +320,11 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                         for contact_age in range(n_ages):
                             if age_groups[contact_age].shape[0] == 0:
                                 continue
-                            num_contacts = np.random.poisson(contact_matrix[age[i], contact_age])
+                            num_contacts = poisson(contact_matrix[age[i], contact_age])
                             for j in range(num_contacts):
                                 #if the contact becomes infected, handle bookkeeping
-                                if np.random.rand() < infectiousness:
-                                    contact = np.random.choice(age_groups[contact_age])
+                                if rand() < infectiousness:
+                                    contact = choice(age_groups[contact_age])
                                     if S[t-1, contact] and not Home[contact]:
                                         E[t, contact] = True
                                         num_infected_by[contact] = 0
