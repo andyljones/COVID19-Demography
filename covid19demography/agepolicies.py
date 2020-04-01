@@ -309,7 +309,7 @@ def contact_tracing(start_date):
         p_trace_household=0.75,
         t_tracing_start=float((d_tracing_start - start_date).days))
 
-def assemble_parameters(frac_stay_home, mtti, country='Italy', seed=0):
+def assemble_kwargs(frac_stay_home, mtti, country='Italy', seed=0):
     tuned = TUNED[country]
 
     times = mean_times(mtti)
@@ -345,32 +345,53 @@ def assemble_parameters(frac_stay_home, mtti, country='Italy', seed=0):
         load_population=LOAD_POPULATION)
 
 
-def simulate(params):
-    np.random.seed(params.seed)
+def simulate(kwargs):
+    np.random.seed(kwargs.seed)
 
     S, E, Mild, Documented, Severe, Critical, R, D, Q, num_infected_by, time_documented, \
         time_to_activation, time_to_death, time_to_recovery, time_critical, time_exposed, num_infected_asympt,\
-        age, time_infected, time_to_severe = simulator.run_complete_simulation(**params)
+        age, time_infected, time_to_severe = simulator.run_complete_simulation(**kwargs)
     
     per_time = arrdict.arrdict(S=S, E=E, D=D, mild=Mild, severe=Severe, critical=Critical, R=R, Q=Q, documented=Documented).sum(1)
-    per_time['infected'] = params.params.n - per_time.S
+    per_time['infected'] = kwargs.params.n - per_time.S
 
     return arrdict.arrdict(
         r0_total=num_infected_by[(0 < time_exposed) & (time_exposed <= 20)].mean(),
         per_time=per_time,
     )
 
-def run(frac, repeats=5):
+def uniform_stay_at_home(frac):
+    return np.full(N_AGES, frac)
+
+def per_group_stay_at_home(fracs):
     age_ranges = [(0,14), (15,29), (30,49), (50,69), (70,100)]
     frac_stay_home = np.zeros(N_AGES)
-    for (l, u), frac in zip(age_ranges, frac):
+    for (l, u), frac in zip(age_ranges, fracs):
         frac_stay_home[l:u+1] = frac 
+    return frac_stay_home
 
+def run(frac, repeats=5):
     results = []
     for i in range(repeats):
-        params = assemble_parameters(frac_stay_home, 4.6, seed=i)
+        params = assemble_kwargs(frac, 4.6, seed=1+i)
         result = simulate(params)
         results.append(result.per_time)
     results = arrdict.stack(results, -1)
 
     return results
+
+def validate():
+    from pathlib import Path
+    import pickle
+
+    ref_kwargs = pickle.loads(Path('output/ref-kwargs.pickle').read_bytes())
+    ref_result = pickle.loads(Path('output/ref-results.pickle').read_bytes())
+
+    frac = uniform_stay_at_home(1.)
+    kwargs = assemble_kwargs(frac, 4.6, seed=1)
+    result = simulate(kwargs)
+
+    actual = result.per_time.D
+    expected = ref_result['D'].sum(-1)
+
+    np.testing.assert_allclose(actual, expected)
