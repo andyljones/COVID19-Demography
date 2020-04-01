@@ -135,7 +135,7 @@ def initial_nums(initial_infected, n):
 
 def activate(t, i, prev, curr, ts, tts, inds, deps, p):
     #exposed -> (mildly) infected
-    if t - ts.time_exposed[i] == tts.time_to_activation[i]:
+    if prev.E[i] and (t - ts.time_exposed[i] == tts.time_to_activation[i]):
         curr.Mild[i] = True
         ts.time_infected[i] = t
         curr.E[i] = False
@@ -154,57 +154,56 @@ def activate(t, i, prev, curr, ts, tts, inds, deps, p):
 
 def progress(t, i, prev, curr, ts, tts, inds, deps, p):
     #symptomatic individuals
+    if (prev.Mild[i] or prev.Severe[i] or prev.Critical[i]):
 
-    #recovery
-    if t - ts.time_infected[i] == tts.time_to_recovery[i]:
-        curr.R[i] = True
-        curr.Mild[i] = curr.Severe[i] = curr.Critical[i] = curr.Q[i] = False
-        return True
+        #recovery
+        if t - ts.time_infected[i] == tts.time_to_recovery[i]:
+            curr.R[i] = True
+            curr.Mild[i] = curr.Severe[i] = curr.Critical[i] = curr.Q[i] = False
+            return 
 
-    if prev.Mild[i] and not prev.Documented[i]:
-        #mild cases are documented with some probability each day
-        if rand() < p.p_documented_in_mild:
-            curr.Documented[i] = True
-            ts.time_documented[i] = t
+        if prev.Mild[i] and not prev.Documented[i]:
+            #mild cases are documented with some probability each day
+            if rand() < p.p_documented_in_mild:
+                curr.Documented[i] = True
+                ts.time_documented[i] = t
 
-    #progression between infection states
-    if prev.Mild[i] and t - ts.time_infected[i] == tts.time_to_severe[i]:
-        curr.Mild[i] = False
-        curr.Severe[i] = True
-        #assume that severe cases are always documented
-        if not prev.Documented[i]:
-            curr.Documented[i] = True
-            ts.time_documented[i] = t
-        curr.Q[i] = True
-        ts.time_severe[i] = t
-        if rand() < deps.p_severe_critical[inds.age[i], inds.diabetes[i], inds.hypertension[i]]:
-            tts.time_to_critical[i] = common.threshold_exponential(p.mean_time_to_critical)
-            tts.time_to_recovery[i] = np.inf
-        else:
-            tts.time_to_recovery[i] = common.threshold_exponential(p.mean_time_severe_recovery) + tts.time_to_severe[i]
-            tts.time_to_critical[i] = np.inf
-    elif prev.Severe[i] and t - ts.time_severe[i] == tts.time_to_critical[i]:
-        curr.Severe[i] = False
-        curr.Critical[i] = True
-        ts.time_critical[i] = t
-        if rand() < deps.p_critical_death[inds.age[i], inds.diabetes[i], inds.hypertension[i]]:
-            tts.time_to_death[i] = common.threshold_exponential(p.mean_time_to_death)
-            tts.time_to_recovery[i] = np.inf
-        else:
-            tts.time_to_recovery[i] = common.threshold_exponential(p.mean_time_critical_recovery) + tts.time_to_severe[i] + tts.time_to_critical[i]
-            tts.time_to_death[i] = np.inf
-    #risk of mortality for critically ill patients
-    elif prev.Critical[i]:
-        if t - ts.time_critical[i] == tts.time_to_death[i]:
-            curr.Critical[i] = False
-            curr.Q[i] = False
-            curr.D[i] = True
-
-    return False
+        #progression between infection states
+        if prev.Mild[i] and t - ts.time_infected[i] == tts.time_to_severe[i]:
+            curr.Mild[i] = False
+            curr.Severe[i] = True
+            #assume that severe cases are always documented
+            if not prev.Documented[i]:
+                curr.Documented[i] = True
+                ts.time_documented[i] = t
+            curr.Q[i] = True
+            ts.time_severe[i] = t
+            if rand() < deps.p_severe_critical[inds.age[i], inds.diabetes[i], inds.hypertension[i]]:
+                tts.time_to_critical[i] = common.threshold_exponential(p.mean_time_to_critical)
+                tts.time_to_recovery[i] = np.inf
+            else:
+                tts.time_to_recovery[i] = common.threshold_exponential(p.mean_time_severe_recovery) + tts.time_to_severe[i]
+                tts.time_to_critical[i] = np.inf
+        elif prev.Severe[i] and t - ts.time_severe[i] == tts.time_to_critical[i]:
+            curr.Severe[i] = False
+            curr.Critical[i] = True
+            ts.time_critical[i] = t
+            if rand() < deps.p_critical_death[inds.age[i], inds.diabetes[i], inds.hypertension[i]]:
+                tts.time_to_death[i] = common.threshold_exponential(p.mean_time_to_death)
+                tts.time_to_recovery[i] = np.inf
+            else:
+                tts.time_to_recovery[i] = common.threshold_exponential(p.mean_time_critical_recovery) + tts.time_to_severe[i] + tts.time_to_critical[i]
+                tts.time_to_death[i] = np.inf
+        #risk of mortality for critically ill patients
+        elif prev.Critical[i]:
+            if t - ts.time_critical[i] == tts.time_to_death[i]:
+                curr.Critical[i] = False
+                curr.Q[i] = False
+                curr.D[i] = True
 
 def spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p):
     #not isolated: either enter isolation or infect others
-    if not prev.Q[i]:
+    if (prev.E[i] or prev.Mild[i] or prev.Severe[i] or prev.Critical[i]) and (not prev.Q[i]) and (not curr.R[i]):
         #isolation
         if not prev.E[i] and t - ts.time_infected[i] == tts.time_to_isolate[i]:
             curr.Q[i] = True
@@ -363,14 +362,10 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
 
         for i in range(n):
             prev, curr = s[t-1], s[t]
-            if prev.E[i]:
-                activate(t, i, prev, curr, ts, tts, inds, deps, p)
-            if (prev.Mild[i] or prev.Severe[i] or prev.Critical[i]):
-                recovered = progress(t, i, prev, curr, ts, tts, inds, deps, p)
-                if recovered:
-                    continue
-            if prev.E[i] or prev.Mild[i] or prev.Severe[i] or prev.Critical[i]:
-                spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p)
+
+            activate(t, i, prev, curr, ts, tts, inds, deps, p)
+            progress(t, i, prev, curr, ts, tts, inds, deps, p)
+            spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p)
 
     return s.S, s.E, s.Mild, s.Documented, s.Severe, s.Critical, s.R, s.D, s.Q, ns.num_infected_by, ts.time_documented, tts.time_to_activation, tts.time_to_death, tts.time_to_recovery, ts.time_critical, ts.time_exposed, ns.num_infected_asympt, age, ts.time_infected, tts.time_to_severe
 
