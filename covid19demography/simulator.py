@@ -364,6 +364,8 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
         for i in range(n):
             activate(t, i, prev, curr, ts, tts, inds, deps, p)
             progress(t, i, prev, curr, ts, tts, inds, deps, p)
+
+        for i in range(n):
             spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p)
 
     return s.S, s.E, s.Mild, s.Documented, s.Severe, s.Critical, s.R, s.D, s.Q, ns.num_infected_by, ts.time_documented, tts.time_to_activation, tts.time_to_death, tts.time_to_recovery, ts.time_critical, ts.time_exposed, ns.num_infected_asympt, age, ts.time_infected, tts.time_to_severe
