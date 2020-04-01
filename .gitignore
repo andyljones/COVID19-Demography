@@ -5,3 +5,4 @@ __pycache__
 scripts
 *.pickle
 age_policies
+.cache

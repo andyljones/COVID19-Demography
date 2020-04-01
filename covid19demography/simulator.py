@@ -360,9 +360,8 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
         for k, v in s.items():
             v[t] = v[t-1]
 
+        prev, curr = s[t-1], s[t]
         for i in range(n):
-            prev, curr = s[t-1], s[t]
-
             activate(t, i, prev, curr, ts, tts, inds, deps, p)
             progress(t, i, prev, curr, ts, tts, inds, deps, p)
             spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p)
