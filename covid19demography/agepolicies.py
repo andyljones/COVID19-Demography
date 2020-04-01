@@ -31,7 +31,7 @@ TUNED = aljpy.dotdict(
         # This is currently set arbitrarily and will be calibrated to match the empirical r0
         pigc=.029,
 
-        population=int(1e7),
+        population=int(1e4),
         n_infected_start=5.,
         start_date=date(2020, 1, 22),
         stay_home_date=date(2020, 3, 8),

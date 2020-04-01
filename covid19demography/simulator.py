@@ -1,7 +1,7 @@
 import numpy as np
 import numba
 from numba import jit
-from . import comorbiditysampler, householdsampler, common
+from . import comorbiditysampler, householdsampler, common, arrdict
 import pickle
 import aljpy
 
@@ -342,3 +342,30 @@ def run_complete_simulation(seed, country, contact_matrix, p_mild_severe, p_seve
 
     print('starting simulation')
     return run_model(seed, households, age, age_groups, diabetes, hypertension, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, as_numba_dict(params))
+
+def validate():
+    from pathlib import Path
+    import pickle
+
+    ref_kwargs = aljpy.dotdict(pickle.loads(Path('output/ref-kwargs.pickle').read_bytes()))
+    ref_result = aljpy.dotdict(pickle.loads(Path('output/ref-results.pickle').read_bytes()))
+    params = aljpy.dotdict(ref_kwargs.params)
+
+    np.random.seed(int(ref_kwargs.seed))
+    age, households, diabetes, hypertension, age_groups = sample_population(int(params.n), ref_kwargs.country, int(params.n_ages))
+
+    print('starting simulation')
+    result = run_model(
+        ref_kwargs.seed, households, age, age_groups, diabetes, hypertension, 
+        ref_kwargs.contact_matrix, ref_kwargs.p_mild_severe, ref_kwargs.p_severe_critical, ref_kwargs.p_critical_death,
+        ref_kwargs.mean_time_to_isolate_factor, ref_kwargs.lockdown_factor_age, ref_kwargs.p_infect_household, ref_kwargs.fraction_stay_home,
+        as_numba_dict(params))
+
+    S, E, Mild, Documented, Severe, Critical, R, D, Q, num_infected_by, time_documented, \
+        time_to_activation, time_to_death, time_to_recovery, time_critical, time_exposed, num_infected_asympt,\
+        age, time_infected, time_to_severe = result
+    
+    result = arrdict.arrdict(S=S, E=E, D=D, mild=Mild, severe=Severe, critical=Critical, R=R, Q=Q, documented=Documented)
+    result['infected'] = params.n - result.S
+
+    np.testing.assert_allclose(ref_result.D, result.D)
