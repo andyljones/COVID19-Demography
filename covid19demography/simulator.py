@@ -41,7 +41,8 @@ def get_lockdown_factor_age(age, lockdown_factor_age):
 @jit(nopython=True)
 def choice(n, k=None, replace=None):
     # np.random.choice's seed will be fixed in the next version of numba: https://github.com/numba/numba/issues/3249
-    # Until then, it diverges from numpy's `choice`.
+    # Until then, it diverges from numpy's `choice` and so we have to keep all the randomness generation in numba 
+    # while we refactor.
     return np.random.choice(n, k, replace=replace)
 
 @jit(nopython=True)
@@ -101,28 +102,9 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
         time_infected (n vector): time step that this individual became mildly infectious, 0 if they never became infectious
         time_to_severe (n vector): time-to-event between mild and severe cases for this individual, 0 if never drawn
     """
-    time_to_activation_mean = params['time_to_activation_mean']
-    time_to_activation_std = params['time_to_activation_std']
-    mean_time_to_death = params['mean_time_to_death']
-    mean_time_critical_recovery = params['mean_time_critical_recovery']
-    mean_time_severe_recovery = params['mean_time_severe_recovery']
-    mean_time_to_severe = params['mean_time_to_severe']
-    mean_time_mild_recovery = params['mean_time_mild_recovery']
-    mean_time_to_critical = params['mean_time_to_critical']
-    p_documented_in_mild = params['p_documented_in_mild']
-    mean_time_to_isolate_asympt = params['mean_time_to_isolate_asympt']
-    asymptomatic_transmissibility = params['asymptomatic_transmissibility']
-    p_infect_given_contact = params['p_infect_given_contact']
+    p = params
     T = int(params['T'])
-    initial_infected_fraction = params['initial_infected_fraction']
-    t_lockdown = int(params['t_lockdown']) 
-    lockdown_factor = params['lockdown_factor']
-    mean_time_to_isolate = params['mean_time_to_isolate']
     n = int(params['n'])
-    n_ages = int(params['n_ages'])
-    contact_tracing = bool(params['contact_tracing'])
-    t_tracing_start = int(params['t_tracing_start'])
-    t_stayinghome_start = int(params['t_stayhome_start'])
     
     numba_seed(int(seed))
     max_household_size = households.shape[1]
@@ -139,7 +121,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
     #whether each individual is assigned to shelter in place
     Home_real = np.zeros(n, dtype=np.bool8)
     Home_real[:] = False
-    for i in range(n_ages):
+    for i in range(int(p.n_ages)):
         matches = np.where(age == i)[0]
         if matches.shape[0] > 0:
             to_stay_home = choice(matches, int(fraction_stay_home[i]*matches.shape[0]), replace=False)
@@ -148,7 +130,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
     dummy_Home = np.zeros(n, dtype=np.bool8)
     dummy_Home[:] = False
     Home = dummy_Home
-    initial_infected = choice(n, int(initial_infected_fraction*n), replace=False)
+    initial_infected = choice(n, int(p.initial_infected_fraction*n), replace=False)
     S[0] = True
     E[0] = False
     R[0] = False
@@ -188,21 +170,21 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
         num_infected_by[initial_infected[i]] = 0
         num_infected_by_outside[initial_infected[i]] = 0
         num_infected_asympt[initial_infected[i]] = 0
-        time_to_activation[initial_infected[i]] = common.threshold_log_normal(time_to_activation_mean, time_to_activation_std)
+        time_to_activation[initial_infected[i]] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
     
     print('Initialized finished')
-    print('mean_time_to_isolate',mean_time_to_isolate)
+    print('mean_time_to_isolate',p.mean_time_to_isolate)
     for t in range(1, T):
         if t % 10 == 0:
             print(t,"/",T)
-        if t == t_lockdown:
+        if t == int(p.t_lockdown):
             # implements a reduction in contact per age group (instead of a single factor)
             # applied to the whole population. Currently not used.
             # for i in range(contact_matrix.shape[0]):
             #     for j in range(contact_matrix.shape[1]):
             #         contact_matrix[i,j] = contact_matrix[i,j]/(get_lockdown_factor_age(i,lockdown_factor_age)*get_lockdown_factor_age(j,lockdown_factor_age))
-            contact_matrix = contact_matrix/lockdown_factor
-        if t == t_stayinghome_start:
+            contact_matrix = contact_matrix/p.lockdown_factor
+        if t == int(p.t_stayhome_start):
             Home = Home_real
         S[t] = S[t-1]
         E[t] = E[t-1]
@@ -222,14 +204,14 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                     E[t, i] = False
                     #draw whether they will progress to severe illness
                     if rand() < p_mild_severe[age[i], diabetes[i], hypertension[i]]:
-                        time_to_severe[i] = common.threshold_exponential(mean_time_to_severe)
+                        time_to_severe[i] = common.threshold_exponential(p.mean_time_to_severe)
                         time_to_recovery[i] = np.inf
                     #draw time to recovery
                     else:
-                        time_to_recovery[i] = common.threshold_exponential(mean_time_mild_recovery)
+                        time_to_recovery[i] = common.threshold_exponential(p.mean_time_mild_recovery)
                         time_to_severe[i] = np.inf
                     #draw time to isolation
-                    time_to_isolate[i] = common.threshold_exponential(mean_time_to_isolate*get_isolation_factor(age[i], mean_time_to_isolate_factor))
+                    time_to_isolate[i] = common.threshold_exponential(p.mean_time_to_isolate*get_isolation_factor(age[i], mean_time_to_isolate_factor))
                     if time_to_isolate[i] == 0:
                         Q[t, i] = True
             #symptomatic individuals
@@ -241,7 +223,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                     continue
                 if Mild[t-1, i] and not Documented[t-1, i]:
                     #mild cases are documented with some probability each day
-                    if rand() < p_documented_in_mild:
+                    if rand() < p.p_documented_in_mild:
                         Documented[t, i] = True
                         time_documented[i] = t
                         traced[i] = True
@@ -257,20 +239,20 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                     Q[t, i] = True
                     time_severe[i] = t
                     if rand() < p_severe_critical[age[i], diabetes[i], hypertension[i]]:
-                        time_to_critical[i] = common.threshold_exponential(mean_time_to_critical)
+                        time_to_critical[i] = common.threshold_exponential(p.mean_time_to_critical)
                         time_to_recovery[i] = np.inf
                     else:
-                        time_to_recovery[i] = common.threshold_exponential(mean_time_severe_recovery) + time_to_severe[i]
+                        time_to_recovery[i] = common.threshold_exponential(p.mean_time_severe_recovery) + time_to_severe[i]
                         time_to_critical[i] = np.inf
                 elif Severe[t-1, i] and t - time_severe[i] == time_to_critical[i]:
                     Severe[t, i] = False
                     Critical[t, i] = True
                     time_critical[i] = t
                     if rand() < p_critical_death[age[i], diabetes[i], hypertension[i]]:
-                        time_to_death[i] = common.threshold_exponential(mean_time_to_death)
+                        time_to_death[i] = common.threshold_exponential(p.mean_time_to_death)
                         time_to_recovery[i] = np.inf
                     else:
-                        time_to_recovery[i] = common.threshold_exponential(mean_time_critical_recovery) + time_to_severe[i] + time_to_critical[i]
+                        time_to_recovery[i] = common.threshold_exponential(p.mean_time_critical_recovery) + time_to_severe[i] + time_to_critical[i]
                         time_to_death[i] = np.inf
                 #risk of mortality for critically ill patients
                 elif Critical[t-1, i]:
@@ -295,29 +277,29 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                         contact = households[i,j]
                         infectiousness = p_infect_household[i]
                         if E[t-1, i]:
-                            infectiousness *= asymptomatic_transmissibility
+                            infectiousness *= p.asymptomatic_transmissibility
                         if S[t-1, contact] and rand() < infectiousness:
                             E[t, contact] = True
                             num_infected_by[contact] = 0
                             num_infected_by_outside[contact] = 0
                             num_infected_asympt[contact] = 0
                             S[t, contact] = False
-                            time_to_isolate[contact] = common.threshold_exponential(mean_time_to_isolate_asympt*get_isolation_factor(age[contact], mean_time_to_isolate_factor))
+                            time_to_isolate[contact] = common.threshold_exponential(p.mean_time_to_isolate_asympt*get_isolation_factor(age[contact], mean_time_to_isolate_factor))
                             if time_to_isolate[contact] == 0:
                                 Q[t, contact] = True
                             time_exposed[contact] = t
-                            time_to_activation[contact] = common.threshold_log_normal(time_to_activation_mean, time_to_activation_std)
+                            time_to_activation[contact] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
                             num_infected_by[i] += 1
                             if E[t-1, i]:
                                 num_infected_asympt[i] += 1
                     #infect across families
                     if not Home[i]:
-                        infectiousness = p_infect_given_contact
+                        infectiousness = p.p_infect_given_contact
                         #lower infectiousness for asymptomatic individuals
                         if E[t-1, i]:
-                            infectiousness *= asymptomatic_transmissibility
+                            infectiousness *= p.asymptomatic_transmissibility
                         #draw a Poisson-distributed number of contacts for each age group
-                        for contact_age in range(n_ages):
+                        for contact_age in range(int(p.n_ages)):
                             if age_groups[contact_age].shape[0] == 0:
                                 continue
                             num_contacts = poisson(contact_matrix[age[i], contact_age])
@@ -331,11 +313,11 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                                         num_infected_by_outside[contact] = 0
                                         num_infected_asympt[contact] = 0
                                         S[t, contact] = False
-                                        time_to_isolate[contact] = common.threshold_exponential(mean_time_to_isolate_asympt*get_isolation_factor(age[contact], mean_time_to_isolate_factor))
+                                        time_to_isolate[contact] = common.threshold_exponential(p.mean_time_to_isolate_asympt*get_isolation_factor(age[contact], mean_time_to_isolate_factor))
                                         if time_to_isolate[contact] == 0:
                                             Q[t, contact] = True
                                         time_exposed[contact] = t
-                                        time_to_activation[contact] = common.threshold_log_normal(time_to_activation_mean, time_to_activation_std)
+                                        time_to_activation[contact] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
                                         num_infected_by[i] += 1
                                         infected_by[i, num_infected_by_outside[i]] = contact
                                         num_infected_by_outside[i] += 1
