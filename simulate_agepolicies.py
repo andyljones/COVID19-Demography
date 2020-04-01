@@ -81,18 +81,18 @@ all_age_isolation_policies = []
 
 
 # # 3. Baseline that isolates no one
-# all_age_isolation_policies = [np.zeros(n_ages)]
+all_age_isolation_policies = [np.zeros(n_ages)]
 
 
 # 4. Baselines that keep some percentage of the entire population isolated 
-for val in [0.1, 0.25, 0.5, 1.0]:
-    combo = np.zeros(n_ages)
-    combo[:]=val
-    all_age_isolation_policies.append(combo)
+# for val in [0.1, 0.25, 0.5, 1.0]:
+#     combo = np.zeros(n_ages)
+#     combo[:]=val
+#     all_age_isolation_policies.append(combo)
 
 
 # Variations on mean_time_to_isolation
-mean_time_to_isolations = [4.6, 10000]
+mean_time_to_isolations = [4.6,]
 
 
 
