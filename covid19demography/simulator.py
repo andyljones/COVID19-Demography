@@ -133,12 +133,12 @@ def initial_nums(initial_infected, n):
 
     return nums
 
-def activate(t, i, s, ts, tts, inds, deps, p):
+def activate(t, i, prev, curr, ts, tts, inds, deps, p):
     #exposed -> (mildly) infected
     if t - ts.time_exposed[i] == tts.time_to_activation[i]:
-        s.Mild[t, i] = True
+        curr.Mild[i] = True
         ts.time_infected[i] = t
-        s.E[t, i] = False
+        curr.E[i] = False
         #draw whether they will progress to severe illness
         if rand() < deps.p_mild_severe[inds.age[i], inds.diabetes[i], inds.hypertension[i]]:
             tts.time_to_severe[i] = common.threshold_exponential(p.mean_time_to_severe)
@@ -150,32 +150,32 @@ def activate(t, i, s, ts, tts, inds, deps, p):
         #draw time to isolation
         tts.time_to_isolate[i] = common.threshold_exponential(p.mean_time_to_isolate*get_isolation_factor(inds.age[i], deps.mean_time_to_isolate_factor))
         if tts.time_to_isolate[i] == 0:
-            s.Q[t, i] = True
+            curr.Q[i] = True
 
-def progress(t, i, s, ts, tts, inds, deps, p):
+def progress(t, i, prev, curr, ts, tts, inds, deps, p):
     #symptomatic individuals
 
     #recovery
     if t - ts.time_infected[i] == tts.time_to_recovery[i]:
-        s.R[t, i] = True
-        s.Mild[t, i] = s.Severe[t, i] = s.Critical[t, i] = s.Q[t, i] = False
+        curr.R[i] = True
+        curr.Mild[i] = curr.Severe[i] = curr.Critical[i] = curr.Q[i] = False
         return True
 
-    if s.Mild[t-1, i] and not s.Documented[t-1, i]:
+    if prev.Mild[i] and not prev.Documented[i]:
         #mild cases are documented with some probability each day
         if rand() < p.p_documented_in_mild:
-            s.Documented[t, i] = True
+            curr.Documented[i] = True
             ts.time_documented[i] = t
 
     #progression between infection states
-    if s.Mild[t-1, i] and t - ts.time_infected[i] == tts.time_to_severe[i]:
-        s.Mild[t, i] = False
-        s.Severe[t, i] = True
+    if prev.Mild[i] and t - ts.time_infected[i] == tts.time_to_severe[i]:
+        curr.Mild[i] = False
+        curr.Severe[i] = True
         #assume that severe cases are always documented
-        if not s.Documented[t-1, i]:
-            s.Documented[t, i] = True
+        if not prev.Documented[i]:
+            curr.Documented[i] = True
             ts.time_documented[i] = t
-        s.Q[t, i] = True
+        curr.Q[i] = True
         ts.time_severe[i] = t
         if rand() < deps.p_severe_critical[inds.age[i], inds.diabetes[i], inds.hypertension[i]]:
             tts.time_to_critical[i] = common.threshold_exponential(p.mean_time_to_critical)
@@ -183,9 +183,9 @@ def progress(t, i, s, ts, tts, inds, deps, p):
         else:
             tts.time_to_recovery[i] = common.threshold_exponential(p.mean_time_severe_recovery) + tts.time_to_severe[i]
             tts.time_to_critical[i] = np.inf
-    elif s.Severe[t-1, i] and t - ts.time_severe[i] == tts.time_to_critical[i]:
-        s.Severe[t, i] = False
-        s.Critical[t, i] = True
+    elif prev.Severe[i] and t - ts.time_severe[i] == tts.time_to_critical[i]:
+        curr.Severe[i] = False
+        curr.Critical[i] = True
         ts.time_critical[i] = t
         if rand() < deps.p_critical_death[inds.age[i], inds.diabetes[i], inds.hypertension[i]]:
             tts.time_to_death[i] = common.threshold_exponential(p.mean_time_to_death)
@@ -194,24 +194,24 @@ def progress(t, i, s, ts, tts, inds, deps, p):
             tts.time_to_recovery[i] = common.threshold_exponential(p.mean_time_critical_recovery) + tts.time_to_severe[i] + tts.time_to_critical[i]
             tts.time_to_death[i] = np.inf
     #risk of mortality for critically ill patients
-    elif s.Critical[t-1, i]:
+    elif prev.Critical[i]:
         if t - ts.time_critical[i] == tts.time_to_death[i]:
-            s.Critical[t, i] = False
-            s.Q[t, i] = False
-            s.D[t, i] = True
+            curr.Critical[i] = False
+            curr.Q[i] = False
+            curr.D[i] = True
 
     return False
 
-def spread(t, i, s, ts, tts, ns, Home, households, infected_by, inds, deps, p):
+def spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p):
     #not isolated: either enter isolation or infect others
-    if not s.Q[t-1, i]:
+    if not prev.Q[i]:
         #isolation
-        if not s.E[t-1, i] and t - ts.time_infected[i] == tts.time_to_isolate[i]:
-            s.Q[t, i] = True
+        if not prev.E[i] and t - ts.time_infected[i] == tts.time_to_isolate[i]:
+            curr.Q[i] = True
             return
 
-        if s.E[t-1, i] and t - ts.time_exposed[i] == tts.time_to_isolate[i]:
-            s.Q[t, i] = True
+        if prev.E[i] and t - ts.time_exposed[i] == tts.time_to_isolate[i]:
+            curr.Q[i] = True
             return
 
         #infect within family
@@ -220,28 +220,28 @@ def spread(t, i, s, ts, tts, ns, Home, households, infected_by, inds, deps, p):
                 break
             contact = households[i,j]
             infectiousness = inds.p_infect_household[i]
-            if s.E[t-1, i]:
+            if prev.E[i]:
                 infectiousness *= p.asymptomatic_transmissibility
-            if s.S[t-1, contact] and rand() < infectiousness:
-                s.E[t, contact] = True
+            if prev.S[contact] and rand() < infectiousness:
+                curr.E[contact] = True
                 ns.num_infected_by[contact] = 0
                 ns.num_infected_by_outside[contact] = 0
                 ns.num_infected_asympt[contact] = 0
-                s.S[t, contact] = False
+                curr.S[contact] = False
                 tts.time_to_isolate[contact] = common.threshold_exponential(p.mean_time_to_isolate_asympt*get_isolation_factor(inds.age[contact], deps.mean_time_to_isolate_factor))
                 if tts.time_to_isolate[contact] == 0:
-                    s.Q[t, contact] = True
+                    curr.Q[contact] = True
                 ts.time_exposed[contact] = t
                 tts.time_to_activation[contact] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
                 ns.num_infected_by[i] += 1
-                if s.E[t-1, i]:
+                if prev.E[i]:
                     ns.num_infected_asympt[i] += 1
 
         #infect across families
         if not Home[i]:
             infectiousness = p.p_infect_given_contact
             #lower infectiousness for asymptomatic individuals
-            if s.E[t-1, i]:
+            if prev.E[i]:
                 infectiousness *= p.asymptomatic_transmissibility
             #draw a Poisson-distributed number of contacts for each age group
             for contact_age in range(int(p.n_ages)):
@@ -252,21 +252,21 @@ def spread(t, i, s, ts, tts, ns, Home, households, infected_by, inds, deps, p):
                     #if the contact becomes infected, handle bookkeeping
                     if rand() < infectiousness:
                         contact = choice(deps.age_groups[contact_age])
-                        if s.S[t-1, contact] and not Home[contact]:
-                            s.E[t, contact] = True
+                        if prev.S[contact] and not Home[contact]:
+                            curr.E[contact] = True
                             ns.num_infected_by[contact] = 0
                             ns.num_infected_by_outside[contact] = 0
                             ns.num_infected_asympt[contact] = 0
-                            s.S[t, contact] = False
+                            curr.S[contact] = False
                             tts.time_to_isolate[contact] = common.threshold_exponential(p.mean_time_to_isolate_asympt*get_isolation_factor(inds.age[contact], deps.mean_time_to_isolate_factor))
                             if tts.time_to_isolate[contact] == 0:
-                                s.Q[t, contact] = True
+                                curr.Q[contact] = True
                             ts.time_exposed[contact] = t
                             tts.time_to_activation[contact] = common.threshold_log_normal(p.time_to_activation_mean, p.time_to_activation_std)
                             ns.num_infected_by[i] += 1
                             infected_by[i, ns.num_infected_by_outside[i]] = contact
                             ns.num_infected_by_outside[i] += 1
-                            if s.E[t-1, i]:
+                            if prev.E[i]:
                                 ns.num_infected_asympt[i] += 1
 
 # @jit(nopython=True)
@@ -349,7 +349,6 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
     tts = initial_time_tos(initial_infected, p)
     
     print('Initialized finished')
-    print('mean_time_to_isolate', p.mean_time_to_isolate)
     for t in range(1, T):
         if t % 10 == 0:
             print(f'{t}/{T}')
@@ -363,14 +362,15 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
             v[t] = v[t-1]
 
         for i in range(n):
-            if s.E[t-1, i]:
-                activate(t, i, s, ts, tts, inds, deps, p)
-            if (s.Mild[t-1, i] or s.Severe[t-1, i] or s.Critical[t-1, i]):
-                recovered = progress(t, i, s, ts, tts, inds, deps, p)
+            prev, curr = s[t-1], s[t]
+            if prev.E[i]:
+                activate(t, i, prev, curr, ts, tts, inds, deps, p)
+            if (prev.Mild[i] or prev.Severe[i] or prev.Critical[i]):
+                recovered = progress(t, i, prev, curr, ts, tts, inds, deps, p)
                 if recovered:
                     continue
-            if s.E[t-1, i] or s.Mild[t-1, i] or s.Severe[t-1, i] or s.Critical[t-1, i]:
-                spread(t, i, s, ts, tts, ns, Home, households, infected_by, inds, deps, p)
+            if prev.E[i] or prev.Mild[i] or prev.Severe[i] or prev.Critical[i]:
+                spread(t, i, prev, curr, ts, tts, ns, Home, households, infected_by, inds, deps, p)
 
     return s.S, s.E, s.Mild, s.Documented, s.Severe, s.Critical, s.R, s.D, s.Q, ns.num_infected_by, ts.time_documented, tts.time_to_activation, tts.time_to_death, tts.time_to_recovery, ts.time_critical, ts.time_exposed, ns.num_infected_asympt, age, ts.time_infected, tts.time_to_severe
 
