@@ -313,10 +313,10 @@ def assemble_kwargs(frac_stay_home, mtti, country='Italy', seed=0):
     tuned = TUNED[country]
 
     times = mean_times(mtti)
-    p_infect_household = common.get_p_infect_household(tuned.population, MEAN_TIME_TO_ISOLATE, 
+    p_infect_household = common.get_p_infect_household(int(tuned.population), MEAN_TIME_TO_ISOLATE, 
                                     times.time_to_activation_mean, times.time_to_activation_std, ASYMPTOMATIC_TRANSMISSIBILITY)
 
-    subparams = aljpy.dotdict(
+    params = aljpy.dotdict(
         n=float(tuned.population),
         n_ages=float(N_AGES),
         seed=float(seed),
@@ -328,6 +328,7 @@ def assemble_kwargs(frac_stay_home, mtti, country='Italy', seed=0):
         p_documented_in_mild=0.,
         p_infect_given_contact=tuned.pigc,
         asymptomatic_transmissibility=ASYMPTOMATIC_TRANSMISSIBILITY,
+        mortality_multiplier=tuned.mortality_multiplier,
         **times,
         **contact_tracing(tuned.start_date)
     )
@@ -341,11 +342,13 @@ def assemble_kwargs(frac_stay_home, mtti, country='Italy', seed=0):
         lockdown_factor_age=lockdown_factor(LOCKDOWN_FACTOR),
         p_infect_household=p_infect_household,
         fraction_stay_home=np.asarray(frac_stay_home),
-        params=subparams,
+        params=params,
         load_population=LOAD_POPULATION)
 
 
 def simulate(kwargs):
+    # Seed is being set directly before the sim here, rather than in advance of 
+    # get_p_infect_household (which has now been derandomized)
     np.random.seed(kwargs.seed)
 
     S, E, Mild, Documented, Severe, Critical, R, D, Q, num_infected_by, time_documented, \
@@ -384,12 +387,30 @@ def validate():
     from pathlib import Path
     import pickle
 
+    # Requires derandomizing get_p_infect_household
     ref_kwargs = pickle.loads(Path('output/ref-kwargs.pickle').read_bytes())
     ref_result = pickle.loads(Path('output/ref-results.pickle').read_bytes())
 
     frac = uniform_stay_at_home(1.)
     kwargs = assemble_kwargs(frac, 4.6, seed=1)
     result = simulate(kwargs)
+
+    for k in ref_kwargs:
+        actual = kwargs[k]
+        expected = ref_kwargs[k]
+        
+        if isinstance(expected, (float, str, bool)):
+            assert expected == actual
+        elif isinstance(expected, np.ndarray):
+            if not np.allclose(expected, actual):
+                print(k)
+                break
+        elif isinstance(expected, dict):
+            for kk in expected:
+                assert expected[kk] == actual[kk]
+        else:
+            print(type(expected))
+            break
 
     actual = result.per_time.D
     expected = ref_result['D'].sum(-1)

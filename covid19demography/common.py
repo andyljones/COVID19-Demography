@@ -56,20 +56,23 @@ def get_p_infect_household(n, mean_time_to_isolate, time_to_activation_mean, tim
     Sets per-day probability of infecting each household member so that the probability
     of infecting before becoming isolated matches the target secondary attack rate
     '''
+
+    # Derandomize this so it doesn't interfere with the random seed of the main sim
+    random = np.random.RandomState(seed=1)
     
     def threshold_exponential(mean, num):
-        return 1 + np.round(np.random.exponential(mean-1, size=num))
+        return 1 + np.round(random.exponential(mean-1, size=num))
     
     def threshold_log_normal(mean, sigma, num):
-        x = np.random.lognormal(mean, sigma, size=num)
+        x = random.lognormal(mean, sigma, size=num)
         x[x <= 0] = 1
         return np.round(x)
 
     def total_p_infection(p_infect, mean_time_to_isolate, time_to_activation_mean, time_to_activation_std):
         time_to_isolate = threshold_exponential(mean_time_to_isolate, 5000)
         time_to_activate = threshold_log_normal(time_to_activation_mean, time_to_activation_std, 5000)
-        time_infect_asymp = np.random.geometric(p_infect*asymptomatic_transmissibility, size=5000)
-        time_infect_symp = np.random.geometric(p_infect, size=5000)
+        time_infect_asymp = random.geometric(p_infect*asymptomatic_transmissibility, size=5000)
+        time_infect_symp = random.geometric(p_infect, size=5000)
         return (1 - (time_infect_asymp > time_to_activate)*(time_infect_symp > time_to_isolate)).mean()
 
     eps = 0.0001
