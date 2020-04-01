@@ -133,6 +133,25 @@ def initial_nums(initial_infected, n):
 
     return nums
 
+def activate(t, i, s, ts, tts, inds, deps, p):
+    if t - ts.time_exposed[i] == tts.time_to_activation[i]:
+        s.Mild[t, i] = True
+        ts.time_infected[i] = t
+        s.E[t, i] = False
+        #draw whether they will progress to severe illness
+        if rand() < deps.p_mild_severe[inds.age[i], inds.diabetes[i], inds.hypertension[i]]:
+            tts.time_to_severe[i] = common.threshold_exponential(p.mean_time_to_severe)
+            tts.time_to_recovery[i] = np.inf
+        #draw time to recovery
+        else:
+            tts.time_to_recovery[i] = common.threshold_exponential(p.mean_time_mild_recovery)
+            tts.time_to_severe[i] = np.inf
+        #draw time to isolation
+        tts.time_to_isolate[i] = common.threshold_exponential(p.mean_time_to_isolate*get_isolation_factor(inds.age[i], deps.mean_time_to_isolate_factor))
+        if tts.time_to_isolate[i] == 0:
+            s.Q[t, i] = True
+
+
 # @jit(nopython=True)
 def run_model(seed, households, age, age_groups, diabetes, hypertension, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, params):
     print('run_model')
@@ -181,6 +200,20 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
     p = params
     T = int(params['T'])
     n = int(params['n'])
+
+    inds = arrdict.arrdict(
+        age=age, 
+        diabetes=diabetes, 
+        hypertension=hypertension)
+
+    deps = arrdict.arrdict(
+        p_mild_severe=p_mild_severe,
+        p_severe_critical=p_severe_critical,
+        p_critical_death=p_critical_death,
+        contact_matrix=contact_matrix,
+        mean_time_to_isolate_factor=mean_time_to_isolate_factor,
+        lockdown_factor_age=lockdown_factor_age,
+        fraction_stay_home=fraction_stay_home)
     
     numba_seed(int(seed))
     max_household_size = households.shape[1]
@@ -198,7 +231,7 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
     tts = initial_time_tos(initial_infected, p)
     
     print('Initialized finished')
-    print('mean_time_to_isolate',p.mean_time_to_isolate)
+    print('mean_time_to_isolate', p.mean_time_to_isolate)
     for t in range(1, T):
         if t % 10 == 0:
             print(t,"/",T)
@@ -206,34 +239,14 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
             contact_matrix = contact_matrix/p.lockdown_factor
         if t == int(p.t_stayhome_start):
             Home = Home_real
-        s.S[t] = s.S[t-1]
-        s.E[t] = s.E[t-1]
-        s.Mild[t] = s.Mild[t-1]
-        s.Documented[t] = s.Documented[t-1]
-        s.Severe[t] = s.Severe[t-1]
-        s.Critical[t] = s.Critical[t-1]
-        s.R[t] = s.R[t-1]
-        s.D[t] = s.D[t-1]
-        s.Q[t] = s.Q[t-1]
+
+        for k, v in s.items():
+            v[t] = v[t-1]
+
         for i in range(n):
             #exposed -> (mildly) infected
             if s.E[t-1, i]:
-                if t - ts.time_exposed[i] == tts.time_to_activation[i]:
-                    s.Mild[t, i] = True
-                    ts.time_infected[i] = t
-                    s.E[t, i] = False
-                    #draw whether they will progress to severe illness
-                    if rand() < p_mild_severe[age[i], diabetes[i], hypertension[i]]:
-                        tts.time_to_severe[i] = common.threshold_exponential(p.mean_time_to_severe)
-                        tts.time_to_recovery[i] = np.inf
-                    #draw time to recovery
-                    else:
-                        tts.time_to_recovery[i] = common.threshold_exponential(p.mean_time_mild_recovery)
-                        tts.time_to_severe[i] = np.inf
-                    #draw time to isolation
-                    tts.time_to_isolate[i] = common.threshold_exponential(p.mean_time_to_isolate*get_isolation_factor(age[i], mean_time_to_isolate_factor))
-                    if tts.time_to_isolate[i] == 0:
-                        s.Q[t, i] = True
+                activate(t, i, s, ts, tts, inds, deps, p)
             #symptomatic individuals
             if (s.Mild[t-1, i] or s.Severe[t-1, i] or s.Critical[t-1, i]):
                 #recovery
