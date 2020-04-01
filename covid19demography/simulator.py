@@ -103,8 +103,6 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
     n = int(params['n'])
     n_ages = int(params['n_ages'])
     contact_tracing = bool(params['contact_tracing'])
-    p_trace_outside = params['p_trace_outside']
-    p_trace_household = params['p_trace_household']
     t_tracing_start = int(params['t_tracing_start'])
     t_stayinghome_start = int(params['t_stayhome_start'])
     if contact_tracing:
@@ -234,10 +232,6 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                         Documented[t, i] = True
                         time_documented[i] = t
                         traced[i] = True
-                        #do contact tracing (if enabled) whenever a case becomes documented
-                        if contact_tracing:
-                            Q[t, i] = True
-                            do_contact_tracing(i, infected_by, p_trace_outside, Q, S, t, households, p_trace_household, Documented, time_documented, traced)
                 #progression between infection states
                 if Mild[t-1, i] and t - time_infected[i] == time_to_severe[i]:
                     Mild[t, i] = False
@@ -247,11 +241,6 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                         Documented[t, i] = True
                         time_documented[i] = t
                         traced[i] = True
-                        #assume that contact tracing is always started for severe cases
-                        #(if enabled)
-                        if contact_tracing:
-                            Q[t, i] = True
-                            do_contact_tracing(i, infected_by, p_trace_outside, Q, S, t, households, p_trace_household, Documented, time_documented, traced)
                     Q[t, i] = True
                     time_severe[i] = t
                     if np.random.rand() < p_severe_critical[age[i], diabetes[i], hypertension[i]]:
