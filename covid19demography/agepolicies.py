@@ -22,8 +22,6 @@ ASYMPTOMATIC_TRANSMISSIBILITY = 0.55
 # DON'T CHANGE: we don't want p infect household to recalibrate for different policy what ifs on mean time to isolate
 MEAN_TIME_TO_ISOLATE = 4.6 # DON'T CHANGE
 
-LOAD_POPULATION = True
-
 TUNED = aljpy.dotdict(
     Italy=aljpy.dotdict(
         # increase probability of death for all ages and comorbidities by this amount
@@ -337,7 +335,7 @@ def assemble_kwargs(frac_stay_home, mtti, country='Italy', seed=0):
         seed=seed,
         country=country,
         contact_matrix=read_contact_matrix(country),
-        **transition_probabilities(TUNED[country].mortality_multiplier),
+        **transition_probabilities(tuned.mortality_multiplier),
         mean_time_to_isolate_factor=mtti_factor(),
         lockdown_factor_age=lockdown_factor(LOCKDOWN_FACTOR),
         p_infect_household=p_infect_household,

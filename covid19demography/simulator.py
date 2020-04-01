@@ -3,9 +3,9 @@ import numba
 from numba import jit
 from . import comorbiditysampler, householdsampler, common
 import pickle
+import aljpy
 
-
-"""3. RUN SIMULATION."""
+LOAD_POPULATION = True
 
 def as_numba_dict(d):
     nd = numba.typed.Dict()
@@ -13,32 +13,16 @@ def as_numba_dict(d):
         nd[k] = v
     return nd
 
-def run_complete_simulation(seed, country, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, params, load_population=False):
-    '''
-    Runs simulation with given parameters (see run_simulation for details).
-    If load_population is true, reads in the simulated population for the given country and size.
-    Otherwise, creates and saves a new population.
-    '''
-    n = int(params['n'])
-    n_ages = int(params['n_ages'])
-    np.random.seed(seed)
-    if load_population:
-        print('loading')
-        age, households, diabetes, hypertension, age_groups = pickle.load(open('{}_population_{}.pickle'.format(country, n), 'rb'))
+@aljpy.autocache()
+def sample_population(n, country, n_ages):
+    if country == "Italy":
+        households, age = householdsampler.sample_households_italy(n)      
     else:
-        if country == "Italy":
-            households, age = householdsampler.sample_households_italy(n)      
-        else:
-            raise ValueError(f'{country} not supported by the household sampler')
-        age_groups = tuple([np.where(age == i)[0] for i in range(0, n_ages)])
-        diabetes, hypertension = comorbiditysampler.sample_joint_comorbidities(age, country)
+        raise ValueError(f'{country} not supported by the household sampler')
+    age_groups = tuple([np.where(age == i)[0] for i in range(0, n_ages)])
+    diabetes, hypertension = comorbiditysampler.sample_joint_comorbidities(age, country)
 
-        data = (age, households, diabetes, hypertension, age_groups)
-        with open('{}_population_{}.pickle'.format(country, n), 'wb') as f:
-            pickle.dump(data, f)
-
-    print('starting simulation')
-    return run_model(seed, households, age, age_groups, diabetes, hypertension, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, as_numba_dict(params))
+    return (age, households, diabetes, hypertension, age_groups)
 
 @jit(nopython=True)
 def get_isolation_factor(age, mean_time_to_isolate_factor):
@@ -53,36 +37,6 @@ def get_lockdown_factor_age(age, lockdown_factor_age):
         if age >= lockdown_factor_age[i, 0] and age <= lockdown_factor_age[i, 1]:
             return lockdown_factor_age[i, 2]
     return 1
-
-@jit(nopython=True)
-def do_contact_tracing(i, infected_by, p_trace_outside, Q, S, t, households, p_trace_household, Documented, time_documented, traced):
-    '''
-    Recursively implements tracing the tree of infectious defined by infected_by.
-    NOT CURRENTLY USED in the preprint. There is no validation of this procedure
-    for any particular example.
-    '''
-    #trace contacts within the household
-    for j in range(households.shape[1]):
-        contact = households[i, j]
-        if contact == -1:
-            break
-        if not S[t-1, contact] and not traced[contact] and np.random.rand() < p_trace_household:
-            Q[t, contact] = True
-            Documented[t, contact] = True
-            traced[contact] = True
-            time_documented[contact] = t
-            do_contact_tracing(contact, infected_by, p_trace_outside, Q, S, t, households, p_trace_household, Documented, time_documented, traced)
-    #trace outside of household contacts
-    for j in range(infected_by.shape[1]):
-        contact = infected_by[i, j]
-        if contact == -1:
-            break
-        if np.random.rand() < p_trace_outside:
-            Q[t, contact] = True
-            Documented[t, contact] = True
-            time_documented[contact] = t
-            traced[contact] = True
-            do_contact_tracing(contact, infected_by, p_trace_outside, Q, S, t, households, p_trace_household, Documented, time_documented, traced)
 
 @jit(nopython=True)
 def run_model(seed, households, age, age_groups, diabetes, hypertension, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, params):
@@ -387,3 +341,15 @@ def run_model(seed, households, age, age_groups, diabetes, hypertension, contact
                                             num_infected_asympt[i] += 1
 
     return S, E, Mild, Documented, Severe, Critical, R, D, Q, num_infected_by,time_documented, time_to_activation, time_to_death, time_to_recovery, time_critical, time_exposed, num_infected_asympt, age, time_infected, time_to_severe
+
+def run_complete_simulation(seed, country, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, params, load_population=False):
+    '''
+    Runs simulation with given parameters (see run_simulation for details).
+    If load_population is true, reads in the simulated population for the given country and size.
+    Otherwise, creates and saves a new population.
+    '''
+    np.random.seed(seed)
+    age, households, diabetes, hypertension, age_groups = sample_population(params.n, country, params.n_ages)
+
+    print('starting simulation')
+    return run_model(seed, households, age, age_groups, diabetes, hypertension, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, as_numba_dict(params))

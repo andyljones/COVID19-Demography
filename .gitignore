@@ -4,3 +4,4 @@ output
 __pycache__
 scripts
 *.pickle
+age_policies
