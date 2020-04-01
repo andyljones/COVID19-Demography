@@ -22,7 +22,7 @@ ASYMPTOMATIC_TRANSMISSIBILITY = 0.55
 # DON'T CHANGE: we don't want p infect household to recalibrate for different policy what ifs on mean time to isolate
 MEAN_TIME_TO_ISOLATE = 4.6 # DON'T CHANGE
 
-LOAD_POPULATION = False
+LOAD_POPULATION = True
 
 TUNED = aljpy.dotdict(
     Italy=aljpy.dotdict(
@@ -33,7 +33,7 @@ TUNED = aljpy.dotdict(
         # This is currently set arbitrarily and will be calibrated to match the empirical r0
         pigc=.029,
 
-        population=int(10e3),
+        population=int(1e7),
         n_infected_start=5.,
         start_date=date(2020, 1, 22),
         stay_home_date=date(2020, 3, 8),

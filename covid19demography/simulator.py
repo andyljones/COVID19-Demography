@@ -28,16 +28,8 @@ def run_complete_simulation(seed, country, contact_matrix, p_mild_severe, p_seve
     else:
         if country == "Italy":
             households, age = householdsampler.sample_households_italy(n)      
-        elif country == "Germany":
-            households, age = householdsampler.sample_households_germany(n)
-        elif country == "UK":
-            households, age = householdsampler.sample_households_uk(n)
-        elif country == "Spain":
-            households, age = householdsampler.sample_households_spain(n)
-        elif country == "China": 
-            households, age = householdsampler.sample_households_china(n)
         else:
-            households, age = householdsampler.sample_households_un(n, country)
+            raise ValueError(f'{country} not supported by the household sampler')
         age_groups = tuple([np.where(age == i)[0] for i in range(0, n_ages)])
         diabetes, hypertension = comorbiditysampler.sample_joint_comorbidities(age, country)
 
