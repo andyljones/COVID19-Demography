@@ -338,7 +338,7 @@ def run_complete_simulation(seed, country, contact_matrix, p_mild_severe, p_seve
     Otherwise, creates and saves a new population.
     '''
     np.random.seed(seed)
-    age, households, diabetes, hypertension, age_groups = sample_population(params.n, country, params.n_ages)
+    age, households, diabetes, hypertension, age_groups = sample_population(int(params.n), country, int(params.n_ages))
 
     print('starting simulation')
     return run_model(seed, households, age, age_groups, diabetes, hypertension, contact_matrix, p_mild_severe, p_severe_critical, p_critical_death, mean_time_to_isolate_factor, lockdown_factor_age, p_infect_household, fraction_stay_home, as_numba_dict(params))

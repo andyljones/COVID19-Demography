@@ -13,7 +13,9 @@ N_AGES = 101
 D_END = date(2020, 5, 20) # stop
 
 # If lockdown, by how much do divide contact matrix?
-LOCKDOWN_FACTOR = 2.
+LOCKDOWN_FACTOR = 10.
+
+LOAD_POPULATION = True
 
 # How infectious are asymptomatic cases relative to symptomatic ones
 # https://science.sciencemag.org/content/early/2020/03/13/science.abb3221
@@ -31,11 +33,11 @@ TUNED = aljpy.dotdict(
         # This is currently set arbitrarily and will be calibrated to match the empirical r0
         pigc=.029,
 
-        population=int(1e4),
+        population=int(1e7),
         n_infected_start=5.,
         start_date=date(2020, 1, 22),
         stay_home_date=date(2020, 3, 8),
-        lockdown_date=date(2022, 12, 31))) # no lockdown
+        lockdown_date=date(2020, 12, 8))) # no lockdown
 
 AGE_GROUPS = {
     'infected_1': '0-4', 'contact_1': '0-4', 'infected_2': '5-9',
